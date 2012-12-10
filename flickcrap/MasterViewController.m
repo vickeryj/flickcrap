@@ -7,12 +7,15 @@
 //
 
 #import "MasterViewController.h"
-
 #import "DetailViewController.h"
+#import "FlickrManager.h"
+#import "UIImageView+AFNetworking.h"
+#import "FlickrFeedItem.h"
 
-@interface MasterViewController () {
-    NSMutableArray *_objects;
-}
+@interface MasterViewController ()
+
+@property (strong, nonatomic) NSArray *feedItems;
+
 @end
 
 @implementation MasterViewController
@@ -21,7 +24,7 @@
 {
     self = [super initWithNibName:nibNameOrNil bundle:nibBundleOrNil];
     if (self) {
-        self.title = NSLocalizedString(@"Master", @"Master");
+        self.title = @"Flickr";
     }
     return self;
 }
@@ -29,27 +32,20 @@
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-	// Do any additional setup after loading the view, typically from a nib.
-    self.navigationItem.leftBarButtonItem = self.editButtonItem;
-
-    UIBarButtonItem *addButton = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAdd target:self action:@selector(insertNewObject:)];
-    self.navigationItem.rightBarButtonItem = addButton;
-}
-
-- (void)didReceiveMemoryWarning
-{
-    [super didReceiveMemoryWarning];
-    // Dispose of any resources that can be recreated.
-}
-
-- (void)insertNewObject:(id)sender
-{
-    if (!_objects) {
-        _objects = [[NSMutableArray alloc] init];
-    }
-    [_objects insertObject:[NSDate date] atIndex:0];
-    NSIndexPath *indexPath = [NSIndexPath indexPathForRow:0 inSection:0];
-    [self.tableView insertRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
+    UIView *spinnerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 60)];
+    UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleGray];
+    [spinner startAnimating];
+    spinner.frame = CGRectMake(160-(spinner.frame.size.width/2), 30-(spinner.frame.size.height/2), spinner.frame.size.width, spinner.frame.size.width);
+    [spinnerView addSubview:spinner];
+    self.tableView.tableHeaderView = spinnerView;
+    FlickrManager *flickrManager = [[FlickrManager alloc] init];
+    [flickrManager fetchFeedWithCallback:^(NSArray *flickrItems) {
+        self.feedItems = flickrItems;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.tableView.tableHeaderView = nil;
+            [self.tableView reloadData];
+        });
+    }];
 }
 
 #pragma mark - Table View
@@ -61,7 +57,7 @@
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
-    return _objects.count;
+    return [self.feedItems count];
 }
 
 // Customize the appearance of table view cells.
@@ -75,51 +71,29 @@
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     }
 
+    cell.textLabel.text = [[self.feedItems objectAtIndex:indexPath.row] title];
+    
 
-    NSDate *object = _objects[indexPath.row];
-    cell.textLabel.text = [object description];
+    NSURLRequest *imageRequest = [[self.feedItems objectAtIndex:indexPath.row] imageRequest];
+    if (nil != imageRequest) {
+        UITableViewCell *weakCell = cell;
+        [cell.imageView setImageWithURLRequest:imageRequest
+                              placeholderImage:nil success:^(NSURLRequest *request, NSHTTPURLResponse *response, UIImage *image) {
+                                  weakCell.imageView.image = image;
+                                  [weakCell setNeedsLayout];
+                              } failure:^(NSURLRequest *request, NSHTTPURLResponse *response, NSError *error) {
+                                  
+                              }];
+    }
+    
     return cell;
 }
 
-- (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath
-{
-    // Return NO if you do not want the specified item to be editable.
-    return YES;
-}
-
-- (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath
-{
-    if (editingStyle == UITableViewCellEditingStyleDelete) {
-        [_objects removeObjectAtIndex:indexPath.row];
-        [tableView deleteRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationFade];
-    } else if (editingStyle == UITableViewCellEditingStyleInsert) {
-        // Create a new instance of the appropriate class, insert it into the array, and add a new row to the table view.
-    }
-}
-
-/*
-// Override to support rearranging the table view.
-- (void)tableView:(UITableView *)tableView moveRowAtIndexPath:(NSIndexPath *)fromIndexPath toIndexPath:(NSIndexPath *)toIndexPath
-{
-}
-*/
-
-/*
-// Override to support conditional rearranging of the table view.
-- (BOOL)tableView:(UITableView *)tableView canMoveRowAtIndexPath:(NSIndexPath *)indexPath
-{
-    // Return NO if you do not want the item to be re-orderable.
-    return YES;
-}
-*/
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    if (!self.detailViewController) {
-        self.detailViewController = [[DetailViewController alloc] initWithNibName:@"DetailViewController" bundle:nil];
-    }
-    NSDate *object = _objects[indexPath.row];
-    self.detailViewController.detailItem = object;
+    self.detailViewController = [[DetailViewController alloc] initWithNibName:@"DetailViewController" bundle:nil];
+    self.detailViewController.feedItem = [self.feedItems objectAtIndex:indexPath.row];
     [self.navigationController pushViewController:self.detailViewController animated:YES];
 }
 
